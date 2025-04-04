@@ -185,45 +185,59 @@ function getCurlOptions(string $targetUrl, string $method): array
  */
 function getPostFields(string $method): array|string
 {
-    $postFields = [];
-
     // Handle request body for methods that support it
-    if (in_array(strtoupper($method), ['POST', 'PUT', 'PATCH', 'DELETE'])) {
-        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    if (!in_array(strtoupper($method), ['POST', 'PUT', 'PATCH', 'DELETE'])) {
+        return []; // No post fields for these methods
+    }
 
-        // Handle different content types
-        if (strpos($contentType, 'multipart/form-data') !== false) {
-            $postFields = $_POST;
+    $postFields = [];
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 
-            // Add file fields
-            foreach ($_FILES as $key => $fileInfo) {
-                if (is_array($fileInfo['name'])) {
-                    // Multiple files with the same name
-                    for ($i = 0; $i < count($fileInfo['name']); $i++) {
-                        if ($fileInfo['error'][$i] === UPLOAD_ERR_OK) {
-                            $postFields[$key . '[' . $i . ']'] = curl_file_create(
-                                $fileInfo['tmp_name'][$i],
-                                $fileInfo['type'][$i],
-                                $fileInfo['name'][$i]
-                            );
-                        }
-                    }
-                } else {
-                    // Single file
-                    if ($fileInfo['error'] === UPLOAD_ERR_OK) {
-                        $postFields[$key] = curl_file_create(
-                            $fileInfo['tmp_name'],
-                            $fileInfo['type'],
-                            $fileInfo['name']
-                        );
-                    }
+    // Handle different content types
+    if (strpos($contentType, 'multipart/form-data') !== false) {
+        $postFields = getFormData();
+    } elseif (strpos($contentType, 'application/x-www-form-urlencoded') !== false) {
+        $postFields = http_build_query($_POST); // Handle URL encoded form data
+    } else {
+        $postFields = file_get_contents('php://input');
+    }
+
+    return $postFields;
+}
+
+/**
+ * Get form data from POST request
+ */
+function getFormData(): array
+{
+    $postFields = $_POST;
+
+    if (empty($_FILES)) {
+        return $postFields; // No files to process
+    }
+
+    // Add file fields
+    foreach ($_FILES as $key => $fileInfo) {
+        if (is_array($fileInfo['name'])) {
+            // Multiple files with the same name
+            for ($i = 0; $i < count($fileInfo['name']); $i++) {
+                if ($fileInfo['error'][$i] === UPLOAD_ERR_OK) {
+                    $postFields[$key . '[' . $i . ']'] = curl_file_create(
+                        $fileInfo['tmp_name'][$i],
+                        $fileInfo['type'][$i],
+                        $fileInfo['name'][$i]
+                    );
                 }
             }
-        } elseif (strpos($contentType, 'application/x-www-form-urlencoded') !== false) {
-            // Handle URL encoded form data
-            $postFields = http_build_query($_POST);
         } else {
-            $postFields = file_get_contents('php://input');
+            // Single file
+            if ($fileInfo['error'] === UPLOAD_ERR_OK) {
+                $postFields[$key] = curl_file_create(
+                    $fileInfo['tmp_name'],
+                    $fileInfo['type'],
+                    $fileInfo['name']
+                );
+            }
         }
     }
 
